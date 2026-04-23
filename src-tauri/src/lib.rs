@@ -7,13 +7,14 @@ struct TrackInfo {
     progress_ms: i64,
 }
 
+// We change the main command to async to support cross-platform libraries
 #[tauri::command]
 async fn get_current_track() -> Result<Option<TrackInfo>, String> {
-    get_current_track_impl()
+    get_current_track_impl().await
 }
 
 #[cfg(target_os = "windows")]
-fn get_current_track_impl() -> Result<Option<TrackInfo>, String> {
+async fn get_current_track_impl() -> Result<Option<TrackInfo>, String> {
     use windows::Media::Control::{
         GlobalSystemMediaTransportControlsSessionManager,
         GlobalSystemMediaTransportControlsSessionPlaybackStatus,
@@ -56,7 +57,33 @@ fn get_current_track_impl() -> Result<Option<TrackInfo>, String> {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn get_current_track_impl() -> Result<Option<TrackInfo>, String> {
+async fn get_current_track_impl() -> Result<Option<TrackInfo>, String> {
+    use nowhear::{MediaSourceBuilder, PlaybackState};
+    let source = MediaSourceBuilder::new()
+        .build()
+        .await
+        .map_err(|e| e.to_string())?;
+        
+    let players = source.list_players().await.map_err(|e| e.to_string())?;
+    
+    if let Some(player_name) = players.first() {
+        let info = source.get_player(player_name).await.map_err(|e| e.to_string())?;
+        let is_playing = match info.playback_state {
+            PlaybackState::Playing => true,
+            _ => false,
+        };
+
+        if is_playing {
+            if let Some(track) = info.current_track {
+                return Ok(Some(TrackInfo {
+                    title: track.title,
+                    artist: track.artist.join(", "),
+                    progress_ms: 0, 
+                }));
+            }
+        }
+    }
+    
     Ok(None)
 }
 
