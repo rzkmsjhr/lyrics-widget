@@ -84,6 +84,7 @@ function App() {
   const [currentRomajiLyric, setCurrentRomajiLyric] = useState("");
   const [showRomaji, setShowRomaji] = useState(false);
   const [scriptType, setScriptType] = useState<"korean" | "japanese" | "none">("none");
+  const [isDarkTheme, setIsDarkTheme] = useState(true);
 
   const currentTrackKeyRef = useRef<string | null>(null);
   const lyricsRef = useRef<LyricLine[]>([]);
@@ -229,6 +230,18 @@ function App() {
   const EDGE = 6;
   const CORN = 12;
 
+  const bgColor = isDarkTheme ? "bg-black/40" : "bg-white/85";
+  const mainTextColor = isDarkTheme ? "text-white" : "text-black";
+
+  const subTextColor = isDarkTheme ? "text-white/65" : "text-black/80";
+
+  const mainTextShadow = isDarkTheme
+    ? "0px 2px 4px rgba(0,0,0,0.9)"
+    : "0px 2px 6px rgba(255,255,255,1)";
+  const subTextShadow = isDarkTheme
+    ? "0px 1px 3px rgba(0,0,0,0.8)"
+    : "0px 1px 4px rgba(255,255,255,1)";
+
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
       <ResizeHandle dir="North" style={{ top: 0, left: CORN, right: CORN, height: EDGE, cursor: "n-resize" }} />
@@ -243,25 +256,24 @@ function App() {
       <main
         data-tauri-drag-region
         style={{ position: "absolute", inset: EDGE }}
-        className="flex flex-col items-center justify-center bg-black/40 backdrop-blur-md rounded-2xl cursor-move select-none overflow-hidden"
+        className={`flex flex-col items-center justify-center backdrop-blur-md rounded-2xl cursor-move select-none overflow-hidden transition-colors duration-300 ${bgColor}`}
       >
         {/* Dual-line mode: original on top, romaji below */}
         {showRomaji && scriptType !== "none" ? (
           <div className="flex flex-col items-center gap-1 pointer-events-none w-full">
             <p
-              className="font-bold text-white text-center leading-snug w-full px-6"
+              className={`font-bold text-center leading-snug w-full px-6 transition-colors duration-300 ${mainTextColor}`}
               style={{
-                textShadow: "0px 2px 4px rgba(0,0,0,0.9)",
-                // Slightly larger base scale so it doesn't look overly small compared to single mode
+                textShadow: mainTextShadow,
                 fontSize: "clamp(1.1rem, min(5.5vw, 18vh), 4.5rem)"
               }}
             >
               {currentLyric}
             </p>
             <p
-              className="font-medium text-white/65 text-center leading-snug w-full px-6"
+              className={`font-semibold text-center leading-snug w-full px-6 transition-colors duration-300 ${subTextColor}`}
               style={{
-                textShadow: "0px 1px 3px rgba(0,0,0,0.8)",
+                textShadow: subTextShadow,
                 fontSize: "clamp(0.85rem, min(4vw, 12vh), 3.5rem)"
               }}
             >
@@ -271,9 +283,9 @@ function App() {
         ) : (
           /* Single-line mode */
           <p
-            className="font-bold text-white text-center pointer-events-none w-full px-6"
+            className={`font-bold text-center pointer-events-none w-full px-6 transition-colors duration-300 ${mainTextColor}`}
             style={{
-              textShadow: "0px 2px 4px rgba(0,0,0,0.8)",
+              textShadow: mainTextShadow,
               fontSize: "clamp(1.25rem, min(6vw, 25vh), 5rem)"
             }}
           >
@@ -281,6 +293,23 @@ function App() {
           </p>
         )}
 
+        {/* Theme Toggle Button */}
+        <button
+          onClick={() => setIsDarkTheme(!isDarkTheme)}
+          title={isDarkTheme ? "Switch to light theme" : "Switch to dark theme"}
+          style={{ zIndex: 10 }}
+          className={`
+            absolute bottom-2 left-3 text-[12px] px-2 py-0.5 rounded-full
+            border transition-all cursor-pointer flex items-center justify-center
+            ${isDarkTheme
+              ? "bg-transparent text-white/50 border-white/20 hover:text-white/80 hover:border-white/40"
+              : "bg-transparent text-black/50 border-black/30 hover:text-black/80 hover:border-black/50"}
+          `}
+        >
+          {isDarkTheme ? "☀" : "☾"}
+        </button>
+
+        {/* ROM toggle */}
         {scriptType !== "none" && (
           <button
             onClick={toggleRomaji}
@@ -290,8 +319,9 @@ function App() {
               absolute bottom-2 right-3 text-[10px] font-bold px-2 py-0.5 rounded-full
               border transition-all cursor-pointer
               ${showRomaji
-                ? "bg-white/90 text-black border-white/80"
-                : "bg-transparent text-white/50 border-white/20 hover:text-white/80 hover:border-white/40"}
+                ? (isDarkTheme ? "bg-white/90 text-black border-white/80" : "bg-black/80 text-white border-black/80")
+                : (isDarkTheme ? "bg-transparent text-white/50 border-white/20 hover:text-white/80 hover:border-white/40"
+                  : "bg-transparent text-black/50 border-black/30 hover:text-black/80 hover:border-black/50")}
             `}
           >
             ROM
