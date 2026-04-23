@@ -7,7 +7,6 @@ struct TrackInfo {
     progress_ms: i64,
 }
 
-// We change the main command to async to support cross-platform libraries
 #[tauri::command]
 async fn get_current_track() -> Result<Option<TrackInfo>, String> {
     get_current_track_impl().await
@@ -58,7 +57,7 @@ async fn get_current_track_impl() -> Result<Option<TrackInfo>, String> {
 
 #[cfg(not(target_os = "windows"))]
 async fn get_current_track_impl() -> Result<Option<TrackInfo>, String> {
-    use nowhear::{MediaSourceBuilder, PlaybackState};
+    use nowhear::{MediaSource, MediaSourceBuilder, PlaybackState};
     let source = MediaSourceBuilder::new()
         .build()
         .await

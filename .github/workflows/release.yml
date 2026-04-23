@@ -5,6 +5,9 @@ on:
       - main
   workflow_dispatch: # Allows you to trigger the build manually
 
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
