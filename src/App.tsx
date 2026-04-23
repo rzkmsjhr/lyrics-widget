@@ -45,14 +45,6 @@ function getTokenizer(): Promise<KuromojiTokenizer> {
   return tokenizerPromise;
 }
 
-async function romanizeJapanese(text: string): Promise<string> {
-  const tokenizer = await getTokenizer();
-  return tokenizer
-    .tokenize(text)
-    .map((t) => toRomaji(t.reading ?? t.surface_form))
-    .join("");
-}
-
 // ── Korean romanization ────────────────────────────────────────────────────
 function romanizeKorean(text: string): string {
   const INITIALS = ["g", "kk", "n", "d", "tt", "r", "m", "b", "pp", "s", "ss", "", "j", "jj", "ch", "k", "t", "p", "h"];
