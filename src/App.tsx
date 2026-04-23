@@ -24,7 +24,6 @@ const ResizeHandle = ({ dir, style }: { dir: ResizeDir; style: React.CSSProperti
 );
 
 // ── Kuromoji (Japanese tokenizer) ─────────────────────────────────────────
-// Loads the dictionary once (~10 MB) on first Japanese song, then stays ready.
 type KuromojiTokenizer = kuromoji.Tokenizer<kuromoji.IpadicFeatures>;
 let tokenizerPromise: Promise<KuromojiTokenizer> | null = null;
 
@@ -46,7 +45,6 @@ function getTokenizer(): Promise<KuromojiTokenizer> {
   return tokenizerPromise;
 }
 
-/** Convert a Japanese text to romaji using kuromoji (for kanji) + wanakana (for kana) */
 async function romanizeJapanese(text: string): Promise<string> {
   const tokenizer = await getTokenizer();
   return tokenizer
@@ -79,7 +77,7 @@ function romanizeKorean(text: string): string {
 // ── Script detection ───────────────────────────────────────────────────────
 function detectScript(text: string): "korean" | "japanese" | "none" {
   const k = (text.match(/[\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F]/g) || []).length;
-  const j = (text.match(/[\u3040-\u30FF\u4E00-\u9FFF]/g) || []).length; // kana + CJK kanji
+  const j = (text.match(/[\u3040-\u30FF\u4E00-\u9FFF]/g) || []).length;
   if (k > j && k > 0) return "korean";
   if (j > 0) return "japanese";
   return "none";
@@ -95,21 +93,18 @@ function App() {
   const [showRomaji, setShowRomaji] = useState(false);
   const [scriptType, setScriptType] = useState<"korean" | "japanese" | "none">("none");
 
-  // Refs don't cause re-renders — safe to read inside setInterval closures
   const currentTrackKeyRef = useRef<string | null>(null);
-  const lyricsRef = useRef<LyricLine[]>([]); // original
-  const lyricsRomajiRef = useRef<LyricLine[]>([]); // pre-romanized
-  const showRomajiRef = useRef(false);           // mirrors showRomaji state
+  const lyricsRef = useRef<LyricLine[]>([]);
+  const lyricsRomajiRef = useRef<LyricLine[]>([]);
+  const showRomajiRef = useRef(false);
   const baseProgressRef = useRef<number>(0);
   const baseTimeRef = useRef<number>(Date.now());
   const lastSmtcProgressRef = useRef<number>(-1);
   const isPlayingRef = useRef<boolean>(false);
 
-  // Warm up the kuromoji tokenizer early so it's ready on first Japanese song
   useEffect(() => { getTokenizer().catch(() => { }); }, []);
 
   useEffect(() => {
-    // ── Fetch lyrics ───────────────────────────────────────────────────────
     const fetchLyrics = async (trackName: string, artistName: string) => {
       try {
         const cleanTrack = trackName.replace(/ \(.+\)| -.+/g, "");
@@ -136,16 +131,13 @@ function App() {
           lyricsRef.current = parsed;
           lyricsRomajiRef.current = [];
 
-          // Detect script from the first few non-empty lines
           const sample = parsed.slice(0, 5).map(l => l.text).join(" ");
           const script = detectScript(sample);
           setScriptType(script);
 
           if (script === "korean") {
-            // Korean romanization is synchronous — do it immediately
             lyricsRomajiRef.current = parsed.map(l => ({ time: l.time, text: romanizeKorean(l.text) }));
           } else if (script === "japanese") {
-            // Japanese needs kuromoji dictionary — run in background
             romanizeAllLines(parsed).then(romanized => {
               lyricsRomajiRef.current = romanized;
             });
@@ -164,7 +156,6 @@ function App() {
       }
     };
 
-    // ── SMTC Poll (1 s) ───────────────────────────────────────────────────
     const pollSMTC = async () => {
       try {
         const track = await invoke<TrackInfo | null>("get_current_track");
@@ -211,14 +202,12 @@ function App() {
       }
     };
 
-    // ── Lyric ticker (250 ms) ─────────────────────────────────────────────
     const updateLyric = () => {
       if (!isPlayingRef.current || lyricsRef.current.length === 0) return;
 
       const progress = baseProgressRef.current + (Date.now() - baseTimeRef.current) + LYRIC_OFFSET_MS;
       const lyrics = lyricsRef.current;
 
-      // Find active index using the original lyrics array
       let activeIdx = 0;
       for (let i = 0; i < lyrics.length; i++) {
         if (progress >= lyrics[i].time) activeIdx = i;
@@ -227,7 +216,6 @@ function App() {
 
       setCurrentLyric(lyrics[activeIdx].text);
 
-      // Mirror the same index into the romaji array (always in sync)
       const romaji = lyricsRomajiRef.current;
       if (romaji.length > 0 && activeIdx < romaji.length) {
         setCurrentRomajiLyric(romaji[activeIdx].text);
@@ -251,8 +239,6 @@ function App() {
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
-
-      {/* Resize handles */}
       <ResizeHandle dir="North" style={{ top: 0, left: CORN, right: CORN, height: EDGE, cursor: "n-resize" }} />
       <ResizeHandle dir="South" style={{ bottom: 0, left: CORN, right: CORN, height: EDGE, cursor: "s-resize" }} />
       <ResizeHandle dir="East" style={{ right: 0, top: CORN, bottom: CORN, width: EDGE, cursor: "e-resize" }} />
@@ -262,26 +248,30 @@ function App() {
       <ResizeHandle dir="SouthWest" style={{ bottom: 0, left: 0, width: CORN, height: CORN, cursor: "sw-resize" }} />
       <ResizeHandle dir="SouthEast" style={{ bottom: 0, right: 0, width: CORN, height: CORN, cursor: "se-resize" }} />
 
-      {/* Main drag region */}
       <main
         data-tauri-drag-region
         style={{ position: "absolute", inset: EDGE }}
-        className="flex flex-col items-center justify-center bg-black/40 backdrop-blur-md rounded-2xl cursor-move select-none"
+        className="flex flex-col items-center justify-center bg-black/40 backdrop-blur-md rounded-2xl cursor-move select-none overflow-hidden"
       >
         {/* Dual-line mode: original on top, romaji below */}
         {showRomaji && scriptType !== "none" ? (
-          <div className="flex flex-col items-center gap-1 pointer-events-none px-6">
-            {/* Original script */}
+          <div className="flex flex-col items-center gap-1 pointer-events-none w-full">
             <p
-              className="text-xl font-bold text-white text-center leading-snug"
-              style={{ textShadow: "0px 2px 4px rgba(0,0,0,0.9)" }}
+              className="font-bold text-white text-center leading-snug w-full px-6"
+              style={{
+                textShadow: "0px 2px 4px rgba(0,0,0,0.9)",
+                // Slightly larger base scale so it doesn't look overly small compared to single mode
+                fontSize: "clamp(1.1rem, min(5.5vw, 18vh), 4.5rem)"
+              }}
             >
               {currentLyric}
             </p>
-            {/* Romaji */}
             <p
-              className="text-sm font-medium text-white/65 text-center leading-snug"
-              style={{ textShadow: "0px 1px 3px rgba(0,0,0,0.8)" }}
+              className="font-medium text-white/65 text-center leading-snug w-full px-6"
+              style={{
+                textShadow: "0px 1px 3px rgba(0,0,0,0.8)",
+                fontSize: "clamp(0.85rem, min(4vw, 12vh), 3.5rem)"
+              }}
             >
               {currentRomajiLyric || "..."}
             </p>
@@ -289,14 +279,16 @@ function App() {
         ) : (
           /* Single-line mode */
           <p
-            className="text-2xl font-bold text-white text-center pointer-events-none px-6"
-            style={{ textShadow: "0px 2px 4px rgba(0,0,0,0.8)" }}
+            className="font-bold text-white text-center pointer-events-none w-full px-6"
+            style={{
+              textShadow: "0px 2px 4px rgba(0,0,0,0.8)",
+              fontSize: "clamp(1.25rem, min(6vw, 25vh), 5rem)"
+            }}
           >
             {currentLyric}
           </p>
         )}
 
-        {/* ROM toggle — only visible for Korean/Japanese lyrics */}
         {scriptType !== "none" && (
           <button
             onClick={toggleRomaji}
@@ -318,7 +310,6 @@ function App() {
   );
 }
 
-/** Pre-romanize all lyric lines for a Japanese song (runs once per song) */
 async function romanizeAllLines(lines: LyricLine[]): Promise<LyricLine[]> {
   try {
     const tokenizer = await getTokenizer();
