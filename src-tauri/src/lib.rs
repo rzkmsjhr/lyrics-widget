@@ -12,6 +12,7 @@ async fn get_current_track() -> Result<Option<TrackInfo>, String> {
     get_current_track_impl().await
 }
 
+// ─── WINDOWS IMPLEMENTATION ──────────────────────────────────────────────
 #[cfg(target_os = "windows")]
 async fn get_current_track_impl() -> Result<Option<TrackInfo>, String> {
     use windows::Media::Control::{
@@ -55,18 +56,17 @@ async fn get_current_track_impl() -> Result<Option<TrackInfo>, String> {
     }))
 }
 
-#[cfg(not(target_os = "windows"))]
+// ─── LINUX IMPLEMENTATION ────────────────────────────────────────────────
+#[cfg(target_os = "linux")]
 async fn get_current_track_impl() -> Result<Option<TrackInfo>, String> {
     use nowhear::{MediaSource, MediaSourceBuilder, PlaybackState};
-    let source = MediaSourceBuilder::new()
-        .build()
-        .await
-        .map_err(|e| e.to_string())?;
-        
+    
+    let source = MediaSourceBuilder::new().build().await.map_err(|e| e.to_string())?;
     let players = source.list_players().await.map_err(|e| e.to_string())?;
     
     if let Some(player_name) = players.first() {
         let info = source.get_player(player_name).await.map_err(|e| e.to_string())?;
+        
         let is_playing = match info.playback_state {
             PlaybackState::Playing => true,
             _ => false,
@@ -74,12 +74,33 @@ async fn get_current_track_impl() -> Result<Option<TrackInfo>, String> {
 
         if is_playing {
             if let Some(track) = info.current_track {
+                let progress_ms = info.position.map(|p| p.as_millis() as i64).unwrap_or(0);
+
                 return Ok(Some(TrackInfo {
                     title: track.title,
                     artist: track.artist.join(", "),
-                    progress_ms: 0, 
+                    progress_ms, 
                 }));
             }
+        }
+    }
+    Ok(None)
+}
+
+// ─── MACOS IMPLEMENTATION ────────────────────────────────────────────────
+#[cfg(target_os = "macos")]
+async fn get_current_track_impl() -> Result<Option<TrackInfo>, String> {
+    use mediaremote_rs::{get_now_playing, is_playing};
+   
+    if is_playing() {
+        if let Some(info) = get_now_playing() {
+            let progress_ms = info.elapsed_time.map(|s| (s * 1000.0) as i64).unwrap_or(0);
+
+            return Ok(Some(TrackInfo {
+                title: info.title,
+                artist: info.artist.unwrap_or_default(),
+                progress_ms,
+            }));
         }
     }
     
