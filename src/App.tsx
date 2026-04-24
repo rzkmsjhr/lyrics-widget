@@ -85,6 +85,8 @@ function App() {
   const [showRomaji, setShowRomaji] = useState(false);
   const [scriptType, setScriptType] = useState<"korean" | "japanese" | "none">("none");
   const [isDarkTheme, setIsDarkTheme] = useState(true);
+  const [isScrollMode, setIsScrollMode] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
 
   const currentTrackKeyRef = useRef<string | null>(null);
   const lyricsRef = useRef<LyricLine[]>([]);
@@ -94,8 +96,19 @@ function App() {
   const baseTimeRef = useRef<number>(Date.now());
   const lastSmtcProgressRef = useRef<number>(-1);
   const isPlayingRef = useRef<boolean>(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const activeLineRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { getTokenizer().catch(() => { }); }, []);
+
+  useEffect(() => {
+    if (isScrollMode && activeLineRef.current) {
+      activeLineRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }
+  }, [activeIndex, isScrollMode]);
 
   useEffect(() => {
     const fetchLyrics = async (trackName: string, artistName: string) => {
@@ -235,6 +248,7 @@ function App() {
         else break;
       }
 
+      setActiveIndex(activeIdx);
       setCurrentLyric(lyrics[activeIdx].text);
 
       const romaji = lyricsRomajiRef.current;
@@ -247,7 +261,7 @@ function App() {
     const smtcId = setInterval(pollSMTC, 1000);
     const lyricId = setInterval(updateLyric, 250);
     return () => { clearInterval(smtcId); clearInterval(lyricId); };
-  }, []);
+  }, [isScrollMode]);
 
   const toggleRomaji = () => {
     const next = !showRomajiRef.current;
@@ -286,56 +300,129 @@ function App() {
         style={{ position: "absolute", inset: EDGE }}
         className={`flex flex-col items-center justify-center backdrop-blur-md rounded-2xl cursor-move select-none overflow-hidden transition-colors duration-300 ${bgColor}`}
       >
-        {/* Dual-line mode: original on top, romaji below */}
-        {showRomaji && scriptType !== "none" ? (
-          <div className="flex flex-col items-center gap-1 pointer-events-none w-full">
-            <p
-              className={`font-bold text-center leading-snug w-full px-6 transition-colors duration-300 ${mainTextColor}`}
-              style={{
-                textShadow: mainTextShadow,
-                fontSize: "clamp(1.1rem, min(5.5vw, 18vh), 4.5rem)"
-              }}
-            >
-              {currentLyric}
-            </p>
-            <p
-              className={`font-semibold text-center leading-snug w-full px-6 transition-colors duration-300 ${subTextColor}`}
-              style={{
-                textShadow: subTextShadow,
-                fontSize: "clamp(0.85rem, min(4vw, 12vh), 3.5rem)"
-              }}
-            >
-              {currentRomajiLyric || "..."}
-            </p>
-          </div>
-        ) : (
-          /* Single-line mode */
-          <p
-            className={`font-bold text-center pointer-events-none w-full px-6 transition-colors duration-300 ${mainTextColor}`}
-            style={{
-              textShadow: mainTextShadow,
-              fontSize: "clamp(1.25rem, min(6vw, 25vh), 5rem)"
+        {isScrollMode && lyricsRef.current.length > 0 ? (
+          /* Apple Music style scroll mode */
+          <div 
+            ref={scrollContainerRef}
+            data-tauri-drag-region
+            className="w-full h-full overflow-y-auto overflow-x-hidden scroll-smooth flex flex-col px-8 py-[40%] no-scrollbar"
+            style={{ 
+              maskImage: 'linear-gradient(to bottom, transparent, black 15%, black 85%, transparent)',
+              WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 15%, black 85%, transparent)'
             }}
           >
-            {currentLyric}
-          </p>
+            {lyricsRef.current.map((line, idx) => {
+              const isActive = idx === activeIndex;
+              const romaji = lyricsRomajiRef.current[idx]?.text;
+              return (
+                <div
+                  key={idx}
+                  ref={isActive ? activeLineRef : null}
+                  data-tauri-drag-region
+                  className={`
+                    py-4 transition-all duration-500 origin-left cursor-default
+                    ${isActive ? "opacity-100 scale-105" : "opacity-30 scale-100 blur-[0.5px]"}
+                  `}
+                >
+                  <p 
+                    data-tauri-drag-region
+                    className={`font-bold leading-tight ${mainTextColor}`}
+                    style={{ 
+                      fontSize: "clamp(1.2rem, 4vw, 2.5rem)",
+                      textShadow: isActive ? mainTextShadow : "none"
+                    }}
+                  >
+                    {line.text}
+                  </p>
+                  {showRomaji && romaji && (
+                    <p 
+                      data-tauri-drag-region
+                      className={`font-semibold mt-1 ${subTextColor}`}
+                      style={{ 
+                        fontSize: "clamp(0.9rem, 3vw, 1.8rem)",
+                        textShadow: isActive ? subTextShadow : "none"
+                      }}
+                    >
+                      {romaji}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          /* Classic mode (Single/Dual line) */
+          <div data-tauri-drag-region className="flex flex-col items-center justify-center h-full w-full">
+            {showRomaji && scriptType !== "none" ? (
+              <div data-tauri-drag-region className="flex flex-col items-center gap-1 pointer-events-none w-full">
+                <p
+                  data-tauri-drag-region
+                  className={`font-bold text-center leading-snug w-full px-6 transition-colors duration-300 ${mainTextColor}`}
+                  style={{
+                    textShadow: mainTextShadow,
+                    fontSize: "clamp(1.1rem, min(5.5vw, 18vh), 4.5rem)"
+                  }}
+                >
+                  {currentLyric}
+                </p>
+                <p
+                  data-tauri-drag-region
+                  className={`font-semibold text-center leading-snug w-full px-6 transition-colors duration-300 ${subTextColor}`}
+                  style={{
+                    textShadow: subTextShadow,
+                    fontSize: "clamp(0.85rem, min(4vw, 12vh), 3.5rem)"
+                  }}
+                >
+                  {currentRomajiLyric || "..."}
+                </p>
+              </div>
+            ) : (
+              <p
+                data-tauri-drag-region
+                className={`font-bold text-center pointer-events-none w-full px-6 transition-colors duration-300 ${mainTextColor}`}
+                style={{
+                  textShadow: mainTextShadow,
+                  fontSize: "clamp(1.25rem, min(6vw, 25vh), 5rem)"
+                }}
+              >
+                {currentLyric}
+              </p>
+            )}
+          </div>
         )}
 
-        {/* Theme Toggle Button */}
-        <button
-          onClick={() => setIsDarkTheme(!isDarkTheme)}
-          title={isDarkTheme ? "Switch to light theme" : "Switch to dark theme"}
-          style={{ zIndex: 10 }}
-          className={`
-            absolute bottom-2 left-3 text-[12px] px-2 py-0.5 rounded-full
-            border transition-all cursor-pointer flex items-center justify-center
-            ${isDarkTheme
-              ? "bg-transparent text-white/50 border-white/20 hover:text-white/80 hover:border-white/40"
-              : "bg-transparent text-black/50 border-black/30 hover:text-black/80 hover:border-black/50"}
-          `}
-        >
-          {isDarkTheme ? "☀" : "☾"}
-        </button>
+        {/* --- Controls --- */}
+        <div className="absolute bottom-2 left-3 flex items-center gap-2" style={{ zIndex: 10 }}>
+          {/* Theme Toggle Button */}
+          <button
+            onClick={() => setIsDarkTheme(!isDarkTheme)}
+            title={isDarkTheme ? "Switch to light theme" : "Switch to dark theme"}
+            className={`
+              text-[12px] px-2 py-0.5 rounded-full
+              border transition-all cursor-pointer flex items-center justify-center
+              ${isDarkTheme
+                ? "bg-transparent text-white/50 border-white/20 hover:text-white/80 hover:border-white/40"
+                : "bg-transparent text-black/50 border-black/30 hover:text-black/80 hover:border-black/50"}
+            `}
+          >
+            {isDarkTheme ? "☀" : "☾"}
+          </button>
+
+          {/* Scroll Mode Toggle */}
+          <button
+            onClick={() => setIsScrollMode(!isScrollMode)}
+            title={isScrollMode ? "Switch to single line" : "Switch to auto-scroll"}
+            className={`
+              text-[10px] font-bold px-2 py-0.5 rounded-full border transition-all cursor-pointer
+              ${isScrollMode
+                ? (isDarkTheme ? "bg-white/90 text-black border-white/80" : "bg-black/80 text-white border-black/80")
+                : (isDarkTheme ? "bg-transparent text-white/50 border-white/20 hover:text-white/80 hover:border-white/40"
+                  : "bg-transparent text-black/50 border-black/30 hover:text-black/80 hover:border-black/50")}
+            `}
+          >
+            LIST
+          </button>
+        </div>
 
         {/* ROM toggle */}
         {scriptType !== "none" && (
