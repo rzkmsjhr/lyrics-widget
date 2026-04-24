@@ -100,14 +100,44 @@ function App() {
   useEffect(() => {
     const fetchLyrics = async (trackName: string, artistName: string) => {
       try {
-        const cleanTrack = trackName.replace(/ \(.+\)| -.+/g, "");
+        let cleanTrack = trackName.replace(/\s*[\(\[](feat\.|ft\.|with).*?[\)\]]/gi, "");
+        cleanTrack = cleanTrack.replace(/\s*-\s*(Remastered|Radio Edit|Live|Mono).*$/gi, "");
+        let data = null;
         const res = await fetch(
           `https://lrclib.net/api/get?track_name=${encodeURIComponent(cleanTrack)}&artist_name=${encodeURIComponent(artistName)}`
         );
-        if (!res.ok) throw new Error("Not found");
-        const data = await res.json();
 
-        if (data?.syncedLyrics) {
+        if (res.ok) {
+          data = await res.json();
+        }
+
+        if (!data || !data.syncedLyrics) {
+          console.log("Exact match failed, deploying global fuzzy net...");
+          const firstWordOfArtist = artistName.trim().split(/\s+/)[0];
+          const searchRes = await fetch(
+            `https://lrclib.net/api/search?q=${encodeURIComponent(cleanTrack + " " + firstWordOfArtist)}`
+          );
+
+          if (searchRes.ok) {
+            const searchResults = await searchRes.json();
+            const bestMatch = searchResults.find((result: any) => {
+              if (!result.syncedLyrics) return false;
+
+              const apiArtist = result.artistName.toLowerCase();
+              const localArtist = artistName.toLowerCase();
+              const apiArtistsArray = apiArtist.split(/,|&/).map((a: string) => a.trim());
+              return apiArtistsArray.some((a: string) => localArtist.includes(a));
+            });
+
+            if (bestMatch) {
+              data = bestMatch;
+            } else {
+              throw new Error("No matching artist found in search results");
+            }
+          }
+        }
+
+        if (data && data.syncedLyrics) {
           const regex = /^\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)/;
           const parsed: LyricLine[] = data.syncedLyrics
             .split("\n")
@@ -124,24 +154,22 @@ function App() {
           lyricsRef.current = parsed;
           lyricsRomajiRef.current = [];
 
-          const sample = parsed.slice(0, 5).map(l => l.text).join(" ");
+          const sample = parsed.slice(0, 5).map((l: any) => l.text).join(" ");
           const script = detectScript(sample);
           setScriptType(script);
 
           if (script === "korean") {
-            lyricsRomajiRef.current = parsed.map(l => ({ time: l.time, text: romanizeKorean(l.text) }));
+            lyricsRomajiRef.current = parsed.map((l: any) => ({ time: l.time, text: romanizeKorean(l.text) }));
           } else if (script === "japanese") {
             romanizeAllLines(parsed).then(romanized => {
               lyricsRomajiRef.current = romanized;
             });
           }
         } else {
-          lyricsRef.current = [];
-          lyricsRomajiRef.current = [];
-          setScriptType("none");
-          setCurrentLyric(`🎵 ${trackName}`);
+          throw new Error("No synced lyrics available after all fallback attempts");
         }
-      } catch {
+      } catch (err) {
+        console.warn("Lyric fetch failed:", err);
         lyricsRef.current = [];
         lyricsRomajiRef.current = [];
         setScriptType("none");
