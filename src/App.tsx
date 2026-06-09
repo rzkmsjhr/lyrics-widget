@@ -88,6 +88,12 @@ function App() {
   const [isScrollMode, setIsScrollMode] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
 
+  const [microphoneDb, setMicrophoneDb] = useState<number>(0);
+  const [exposurePercentage, setExposurePercentage] = useState<number>(0);
+  const [fatiguePercentage, setFatiguePercentage] = useState<number>(0);
+  const exposureDoseRef = useRef<number>(0);
+  const fatigueDoseRef = useRef<number>(0);
+
   const currentTrackKeyRef = useRef<string | null>(null);
   const lyricsRef = useRef<LyricLine[]>([]);
   const lyricsRomajiRef = useRef<LyricLine[]>([]);
@@ -257,10 +263,41 @@ function App() {
       }
     };
 
+    let lastDbTime = Date.now();
+    const pollDb = async () => {
+      try {
+        const db = await invoke<number>("get_microphone_db");
+        setMicrophoneDb(db);
+        
+        const now = Date.now();
+        const deltaMs = now - lastDbTime;
+        lastDbTime = now;
+        
+        if (db >= 80) {
+          const allowedTimeMs = 28_800_000 / Math.pow(2, (db - 85) / 3);
+          exposureDoseRef.current += (deltaMs / allowedTimeMs);
+        } else if (db < 60) {
+          exposureDoseRef.current = Math.max(0, exposureDoseRef.current - (deltaMs / 28_800_000));
+        }
+        
+        // Fatigue (2.5 hrs active listening to 100%, 30 mins rest to 0%)
+        if (isPlayingRef.current && db >= 30) {
+          fatigueDoseRef.current = Math.min(1.0, fatigueDoseRef.current + (deltaMs / 9_000_000));
+        } else {
+          fatigueDoseRef.current = Math.max(0, fatigueDoseRef.current - (deltaMs / 1_800_000));
+        }
+        
+        setExposurePercentage(exposureDoseRef.current);
+        setFatiguePercentage(fatigueDoseRef.current);
+      } catch (err) {
+      }
+    };
+
     pollSMTC();
     const smtcId = setInterval(pollSMTC, 1000);
     const lyricId = setInterval(updateLyric, 250);
-    return () => { clearInterval(smtcId); clearInterval(lyricId); };
+    const dbId = setInterval(pollDb, 200);
+    return () => { clearInterval(smtcId); clearInterval(lyricId); clearInterval(dbId); };
   }, [isScrollMode]);
 
   const toggleRomaji = () => {
@@ -300,6 +337,52 @@ function App() {
         style={{ position: "absolute", inset: EDGE }}
         className={`flex flex-col items-center justify-center backdrop-blur-md rounded-2xl cursor-move select-none overflow-hidden transition-colors duration-300 ${bgColor}`}
       >
+        {/* DB Meter UI */}
+        <div 
+          className={`absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold z-10 transition-colors duration-500 backdrop-blur-md group
+            ${isDarkTheme ? "bg-black/40 text-white/90 border border-white/10" : "bg-white/30 text-black/90 border border-black/10 shadow-sm"}
+          `}
+        >
+          {/* Ear Icon (Overall Health) */}
+          <div className="flex items-center gap-1.5 border-r border-current/20 pr-1.5 mr-0.5">
+            <svg 
+              xmlns="http://www.w3.org/2000/svg" 
+              viewBox="0 0 24 24" 
+              fill="none" 
+              stroke="currentColor" 
+              strokeWidth="2" 
+              strokeLinecap="round" 
+              strokeLinejoin="round" 
+              className={`w-3.5 h-3.5 transition-colors duration-500 ${Math.max(exposurePercentage, fatiguePercentage) >= 1.0 ? "text-red-500 animate-pulse" : Math.max(exposurePercentage, fatiguePercentage) >= 0.5 ? "text-yellow-500" : "text-green-500"}`}
+            >
+              <path d="M6 8.5a6.5 6.5 0 1 1 13 0c0 6-6 6-6 10a3.5 3.5 0 1 1-7 0"/>
+              <path d="M15 8.5a2.5 2.5 0 0 0-5 0v1a2 2 0 1 1 0 4"/>
+            </svg>
+          </div>
+          
+          {/* Visual Bars */}
+          <div className="flex gap-[2px] items-end h-[10px] w-12" title="Current dB Level">
+            {Array.from({ length: 10 }).map((_, i) => {
+               const threshold = 30 + i * 8; // 30dB to 102dB roughly
+               const isActive = microphoneDb >= threshold;
+               const isLoud = i >= 7; 
+               const color = !isActive ? (isDarkTheme ? "bg-white/20" : "bg-black/20") 
+                          : (isLoud ? (i >= 9 ? "bg-red-500" : "bg-yellow-500") : "bg-green-500");
+               return (
+                 <div key={i} className={`flex-1 rounded-[1px] transition-colors duration-150 ${color}`} style={{ height: `${Math.max(30, (i+1)*10)}%` }} />
+               )
+            })}
+          </div>
+          <span className="w-8 text-right font-mono tracking-tighter" title="Current dB Level">{microphoneDb.toFixed(0)}dB</span>
+          
+          {/* Custom Styled Tooltip */}
+          <div className={`absolute top-full left-1/2 -translate-x-1/2 mt-1 px-3 py-2 rounded-xl text-xs font-semibold whitespace-pre opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none shadow-lg border backdrop-blur-md z-50
+            ${isDarkTheme ? "bg-black/90 text-white/90 border-white/20" : "bg-white/90 text-black/90 border-black/20"}
+          `}>
+            Acoustic Damage: {(exposurePercentage * 100).toFixed(0)}%{"\n"}Listening Fatigue: {(fatiguePercentage * 100).toFixed(0)}%
+          </div>
+        </div>
+
         {isScrollMode && lyricsRef.current.length > 0 ? (
           /* Apple Music style scroll mode */
           <div 
@@ -352,7 +435,7 @@ function App() {
           </div>
         ) : (
           /* Classic mode (Single/Dual line) */
-          <div data-tauri-drag-region className="flex flex-col items-center justify-center h-full w-full">
+          <div data-tauri-drag-region className="flex flex-col items-center justify-center h-full w-full pt-4">
             {showRomaji && scriptType !== "none" ? (
               <div data-tauri-drag-region className="flex flex-col items-center gap-1 pointer-events-none w-full">
                 <p
